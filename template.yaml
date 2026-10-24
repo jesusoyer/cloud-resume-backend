@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Cloud Resume Challenge visitor counter (DynamoDB + Lambda + HTTP API)
+
+Resources:
+  VisitorTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+  CounterApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - https://resume.jesoyer.com
+        AllowMethods:
+          - POST
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 10
+        ThrottlingRateLimit: 5
+
+  VisitorCounterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.13
+      CodeUri: src/
+      Handler: visitor_counter.lambda_handler
+      Timeout: 5
+      MemorySize: 128
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref VisitorTable
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:UpdateItem
+              Resource: !GetAtt VisitorTable.Arn
+      Events:
+        Count:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref CounterApi
+            Path: /count
+            Method: POST
+
+Outputs:
+  ApiUrl:
+    Description: Visitor counter endpoint for script.js
+    Value: !Sub "https://${CounterApi}.execute-api.${AWS::Region}.amazonaws.com/count"
+  TableName:
+    Description: DynamoDB table created by this stack
+    Value: !Ref VisitorTable
