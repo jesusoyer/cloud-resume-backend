@@ -35,7 +35,7 @@ def test_first_visit_starts_at_one(counter):
     # Edge case: the item doesn't exist yet
     response, body = call(counter)
     assert response["statusCode"] == 200
-    assert body["count"] == 999
+    assert body["count"] == 1
 
 
 def test_each_visit_adds_one(counter):
