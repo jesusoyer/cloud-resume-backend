@@ -1,0 +1,62 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write     # lets the workflow request OIDC credentials
+  contents: read
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install -r tests/requirements.txt
+      - run: python -m pytest tests/unit
+
+  deploy:
+    name: Build and deploy
+    needs: test                       # only runs if unit tests pass
+    runs-on: ubuntu-latest
+    outputs:
+      api_url: ${{ steps.url.outputs.api_url }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: arn:aws:iam::585949317910:role/github-actions-backend
+          aws-region: us-east-1
+      - run: sam build
+      - run: sam deploy --no-confirm-changeset --no-fail-on-empty-changeset
+      - name: Get the API address
+        id: url
+        run: |
+          URL=$(aws cloudformation describe-stacks --stack-name cloud-resume-backend \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+          echo "api_url=$URL" >> "$GITHUB_OUTPUT"
+
+  smoke-test:
+    name: Smoke test live API
+    needs: deploy                     # only runs after a successful deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install pytest
+      - run: python -m pytest tests/smoke -v
+        env:
+          API_URL: ${{ needs.deploy.outputs.api_url }}
